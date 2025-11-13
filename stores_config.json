@@ -1,0 +1,128 @@
+{
+  "stores": {
+    "metro_market": {
+      "name": "Metro Market",
+      "enabled": true,
+      "locations": [
+        {
+          "id": "mm_wauwatosa",
+          "address": "6950 W State St, Wauwatosa, WI 53213",
+          "phone": "(414) 475-7181",
+          "pickup_available": true,
+          "senior_day": "Wednesday",
+          "preferred": true
+        }
+      ],
+      "api_endpoints": {
+        "weekly_ad": "https://www.metromarket.net/weeklyad",
+        "digital_coupons": "https://www.metromarket.net/cl/coupons",
+        "search": "https://www.metromarket.net/search"
+      },
+      "scrape_config": {
+        "frequency": "daily",
+        "best_time": "06:00",
+        "requires_auth": false
+      }
+    },
+    "sendiks": {
+      "name": "Sendik's",
+      "enabled": true,
+      "locations": [
+        {
+          "id": "sendiks_whitefish_bay",
+          "address": "8616 W North Ave, Wauwatosa, WI 53226",
+          "phone": "(414) 456-9525",
+          "pickup_available": true,
+          "senior_day": "Tuesday",
+          "preferred": true
+        }
+      ],
+      "api_endpoints": {
+        "weekly_specials": "https://www.sendiks.com/weekly-specials",
+        "rewards": "https://www.sendiks.com/rewards"
+      },
+      "scrape_config": {
+        "frequency": "weekly",
+        "best_day": "Wednesday",
+        "requires_auth": false
+      }
+    },
+    "walmart": {
+      "name": "Walmart",
+      "enabled": true,
+      "locations": [
+        {
+          "id": "walmart_brown_deer",
+          "address": "4140 W Greenfield Ave, West Milwaukee, WI 53215",
+          "phone": "(414) 978-2004",
+          "pickup_available": true,
+          "delivery_available": true,
+          "preferred": false
+        }
+      ],
+      "api_endpoints": {
+        "api": "https://developer.walmart.com/api/us",
+        "search": "https://www.walmart.com/search",
+        "pickup": "https://www.walmart.com/cp/pickup-delivery"
+      },
+      "scrape_config": {
+        "frequency": "daily",
+        "use_api": true,
+        "api_key_required": true
+      }
+    },
+    "pick_n_save": {
+      "name": "Pick 'n Save",
+      "enabled": true,
+      "locations": [
+        {
+          "id": "pns_glendale",
+          "address": "8151 W Bluemound Rd, Milwaukee, WI 53213",
+          "phone": "(414) 771-9039",
+          "pickup_available": true,
+          "fuel_points": true,
+          "preferred": false
+        }
+      ],
+      "api_endpoints": {
+        "weekly_ad": "https://www.picknsave.com/weeklyad",
+        "digital_coupons": "https://www.picknsave.com/cl/coupons"
+      },
+      "scrape_config": {
+        "frequency": "daily",
+        "best_time": "06:00",
+        "requires_auth": false
+      }
+    },
+    "cermak": {
+      "name": "Cermak Fresh Market",
+      "enabled": true,
+      "locations": [
+        {
+          "id": "cermak_milwaukee",
+          "address": "1541 Miller Park Way, West Milwaukee, WI 53214",
+          "phone": "(414) 988-9051",
+          "pickup_available": false,
+          "preferred": false
+        }
+      ],
+      "api_endpoints": {
+        "weekly_ad": "https://www.cermakfresh.com/weekly-ads"
+      },
+      "scrape_config": {
+        "frequency": "weekly",
+        "best_day": "Wednesday",
+        "requires_auth": false
+      }
+    }
+  },
+  "settings": {
+    "max_stores_per_trip": 4,
+    "max_drive_time_minutes": 60,
+    "price_match_threshold": 0.10,
+    "consider_fuel_points": true,
+    "prefer_pickup": true,
+    "shopping_day_preferences": ["Saturday", "Sunday"],
+    "budget_weekly": 200
+  }
+}
