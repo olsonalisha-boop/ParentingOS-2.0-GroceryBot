@@ -1,0 +1,34 @@
+name: Daily Deal Finder
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"  # Runs daily at 6 AM CST
+
+jobs:
+  run-deals:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Deal Finder
+        run: |
+          python find_deals.py
+
+      - name: Upload report
+        uses: actions/upload-artifact@v3
+        with:
+          name: shopping-report
+          path: output/
