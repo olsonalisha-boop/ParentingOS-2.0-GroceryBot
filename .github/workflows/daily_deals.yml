@@ -1,4 +1,4 @@
-name: Daily Deal Finder
+run: Daily Deal Finder
 
 on:
   workflow_dispatch:
