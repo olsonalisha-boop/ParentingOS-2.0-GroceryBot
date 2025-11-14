@@ -1,0 +1,144 @@
+name: Notion Sync
+
+on:
+  schedule:
+    # Sync every day at 5:45 AM CST (before deal finder runs)
+    - cron: '45 11 * * *'
+  workflow_dispatch:
+    inputs:
+      sync_direction:
+        description: 'Sync direction'
+        required: true
+        default: 'both'
+        type: choice
+        options:
+          - from_notion
+          - to_notion
+          - both
+
+jobs:
+  sync-notion:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.NOTION_TOKEN && secrets.NOTION_DATABASE_ID }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install requests pandas notion-client
+    
+    - name: Sync from Notion to CSV
+      if: ${{ github.event.inputs.sync_direction != 'to_notion' }}
+      env:
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      run: |
+        python - <<'EOF'
+        import os
+        import csv
+        from notion_client import Client
+        
+        notion = Client(auth=os.environ['NOTION_TOKEN'])
+        database_id = os.environ['NOTION_DATABASE_ID']
+        
+        # Query database
+        results = notion.databases.query(database_id=database_id)
+        
+        # Extract shopping list items
+        items = []
+        for page in results['results']:
+            props = page['properties']
+            item = {
+                'item_name': props.get('Item Name', {}).get('title', [{}])[0].get('text', {}).get('content', ''),
+                'quantity': props.get('Quantity', {}).get('number', 1),
+                'preferred_brand': props.get('Preferred Brand', {}).get('rich_text', [{}])[0].get('text', {}).get('content', ''),
+                'max_price': props.get('Max Price', {}).get('number', 99.99)
+            }
+            if item['item_name']:
+                items.append(item)
+        
+        # Write to CSV
+        with open('data/shopping_list.csv', 'w', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=['item_name', 'quantity', 'preferred_brand', 'max_price'])
+            writer.writeheader()
+            writer.writerows(items)
+        
+        print(f"✅ Synced {len(items)} items from Notion")
+        EOF
+    
+    - name: Sync deals back to Notion
+      if: ${{ github.event.inputs.sync_direction != 'from_notion' }}
+      env:
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        NOTION_DEALS_DATABASE_ID: ${{ secrets.NOTION_DEALS_DATABASE_ID }}
+      run: |
+        python - <<'EOF'
+        import os
+        import json
+        from datetime import datetime
+        from pathlib import Path
+        from notion_client import Client
+        
+        # Check if deals database is configured
+        deals_db = os.environ.get('NOTION_DEALS_DATABASE_ID')
+        if not deals_db:
+            print("No deals database configured, skipping")
+            exit(0)
+        
+        notion = Client(auth=os.environ['NOTION_TOKEN'])
+        
+        # Find latest deals report
+        output_dir = Path('output')
+        reports = sorted(output_dir.glob('shopping_report_*.md'), reverse=True)
+        
+        if not reports:
+            print("No deals to sync")
+            exit(0)
+        
+        # Parse report and create Notion pages
+        # This is simplified - enhance based on your needs
+        with open(reports[0], 'r') as f:
+            content = f.read()
+        
+        # Extract deals (simplified parsing)
+        import re
+        deal_pattern = re.compile(r'### (.*?)\n.*?Best Price: \$([\d.]+) at (.*?)\n')
+        
+        for match in deal_pattern.finditer(content):
+            try:
+                notion.pages.create(
+                    parent={'database_id': deals_db},
+                    properties={
+                        'Deal': {'title': [{'text': {'content': match.group(1)}}]},
+                        'Price': {'number': float(match.group(2))},
+                        'Store': {'select': {'name': match.group(3)}},
+                        'Date Found': {'date': {'start': datetime.now().isoformat()}}
+                    }
+                )
+            except Exception as e:
+                print(f"Failed to create deal: {e}")
+        
+        print("✅ Deals synced to Notion")
+        EOF
+    
+    - name: Commit changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/shopping_list.csv
+        git diff --staged --quiet || git commit -m "🔄 Sync shopping list from Notion"
+    
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}

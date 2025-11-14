@@ -1,0 +1,213 @@
+name: Weekly Analytics Report
+
+on:
+  schedule:
+    # Every Sunday at 7 PM CST
+    - cron: '0 1 * * 0'
+  workflow_dispatch:
+
+jobs:
+  generate-analytics:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Get full history for analytics
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Install dependencies
+      run: |
+        pip install pandas matplotlib seaborn
+    
+    - name: Generate weekly analytics
+      run: |
+        python - <<'EOF'
+        import json
+        import pandas as pd
+        from pathlib import Path
+        from datetime import datetime, timedelta
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        # Set style
+        sns.set_style("whitegrid")
+        
+        # Collect all reports from the week
+        output_dir = Path('output')
+        week_ago = datetime.now() - timedelta(days=7)
+        
+        weekly_data = {
+            'dates': [],
+            'savings': [],
+            'stores': [],
+            'items': []
+        }
+        
+        # Parse all shopping reports
+        for report in output_dir.glob('shopping_report_*.md'):
+            # Get file date
+            file_date = datetime.fromtimestamp(report.stat().st_mtime)
+            if file_date < week_ago:
+                continue
+            
+            with open(report, 'r') as f:
+                content = f.read()
+            
+            # Extract savings (simplified)
+            import re
+            savings_match = re.search(r'Total potential savings: \$(\d+\.\d+)', content)
+            if savings_match:
+                weekly_data['dates'].append(file_date.strftime('%Y-%m-%d'))
+                weekly_data['savings'].append(float(savings_match[1]))
+        
+        # Generate summary
+        if weekly_data['savings']:
+            total_savings = sum(weekly_data['savings'])
+            avg_savings = total_savings / len(weekly_data['savings'])
+            best_day = max(zip(weekly_data['dates'], weekly_data['savings']), key=lambda x: x[1])
+            
+            # Create visualization
+            fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+            
+            # Daily savings
+            axes[0, 0].bar(weekly_data['dates'], weekly_data['savings'], color='green')
+            axes[0, 0].set_title('Daily Savings')
+            axes[0, 0].set_xlabel('Date')
+            axes[0, 0].set_ylabel('Savings ($)')
+            axes[0, 0].tick_params(axis='x', rotation=45)
+            
+            # Cumulative savings
+            cumulative = pd.Series(weekly_data['savings']).cumsum()
+            axes[0, 1].plot(weekly_data['dates'], cumulative, marker='o', color='blue')
+            axes[0, 1].set_title('Cumulative Weekly Savings')
+            axes[0, 1].set_xlabel('Date')
+            axes[0, 1].set_ylabel('Total Savings ($)')
+            axes[0, 1].tick_params(axis='x', rotation=45)
+            
+            # Savings distribution
+            axes[1, 0].hist(weekly_data['savings'], bins=5, color='purple', edgecolor='black')
+            axes[1, 0].set_title('Savings Distribution')
+            axes[1, 0].set_xlabel('Savings Amount ($)')
+            axes[1, 0].set_ylabel('Frequency')
+            
+            # Summary stats
+            axes[1, 1].axis('off')
+            summary_text = f"""
+            Weekly Summary:
+            
+            Total Saved: ${total_savings:.2f}
+            Average Daily: ${avg_savings:.2f}
+            Best Day: {best_day[0]} (${best_day[1]:.2f})
+            Days Tracked: {len(weekly_data['savings'])}
+            
+            Projected Monthly: ${total_savings * 4.33:.2f}
+            Projected Annual: ${total_savings * 52:.2f}
+            """
+            axes[1, 1].text(0.1, 0.5, summary_text, fontsize=12, verticalalignment='center')
+            
+            plt.tight_layout()
+            plt.savefig('output/weekly_analytics.png', dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            # Generate markdown report
+            report = f"""# 📊 Weekly Shopping Analytics Report
+            
+## Week of {(datetime.now() - timedelta(days=7)).strftime('%B %d')} - {datetime.now().strftime('%B %d, %Y')}
+
+### 💰 Savings Summary
+- **Total Weekly Savings**: ${total_savings:.2f}
+- **Average Daily Savings**: ${avg_savings:.2f}
+- **Best Shopping Day**: {best_day[0]} with ${best_day[1]:.2f} saved
+
+### 📈 Projections
+- **Monthly Estimate**: ${total_savings * 4.33:.2f}
+- **Annual Estimate**: ${total_savings * 52:.2f}
+
+### 🏆 Performance Metrics
+- **Days with Deals Found**: {len(weekly_data['savings'])}
+- **Success Rate**: {len(weekly_data['savings'])/7*100:.1f}%
+
+### 💡 Insights
+"""
+            if total_savings > 100:
+                report += "- 🎉 Excellent week! You're on track to save over $400 this month!\n"
+            elif total_savings > 50:
+                report += "- ✅ Good week! Consider checking more stores to increase savings.\n"
+            else:
+                report += "- 💡 Room for improvement. Try adding more items to your shopping list.\n"
+            
+            if avg_savings > 20:
+                report += "- 🌟 Your average daily savings are strong. Keep it up!\n"
+            
+            report += f"""
+### 📝 Recommendations
+1. Best shopping days appear to be weekends based on deal availability
+2. Consider bulk buying on high-savings days
+3. Review items that consistently have good deals
+
+---
+*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*
+"""
+            
+            # Save report
+            report_path = Path(f'output/weekly_report_{datetime.now().strftime("%Y%m%d")}.md')
+            with open(report_path, 'w') as f:
+                f.write(report)
+            
+            print(f"✅ Weekly analytics generated: ${total_savings:.2f} saved!")
+            print(f"📊 Report saved to {report_path}")
+            
+            # Update GitHub summary
+            with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+                f.write(report)
+        else:
+            print("No data for this week")
+        EOF
+    
+    - name: Upload analytics artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: weekly-analytics
+        path: |
+          output/weekly_report_*.md
+          output/weekly_analytics.png
+        retention-days: 90
+    
+    - name: Create analytics issue
+      if: success()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const reports = fs.readdirSync('output').filter(f => f.includes('weekly_report'));
+          
+          if (reports.length > 0) {
+            const report = fs.readFileSync(`output/${reports[0]}`, 'utf8');
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📊 Weekly Analytics - ${new Date().toLocaleDateString()}`,
+              body: report,
+              labels: ['analytics', 'weekly-report']
+            });
+          }
+    
+    - name: Commit analytics
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add output/weekly_*
+        git diff --staged --quiet || git commit -m "📊 Add weekly analytics report"
+    
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}

@@ -1,34 +1,167 @@
 name: Daily Deal Finder
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "0 12 * * *"  # Runs daily at 6 AM CST
+    # Runs at 6 AM CST (12 PM UTC) every day
+    - cron: '0 12 * * *'
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+    inputs:
+      debug_mode:
+        description: 'Run in debug mode'
+        required: false
+        default: 'false'
 
 jobs:
-  run-deals:
+  find-deals:
     runs-on: ubuntu-latest
-
+    timeout-minutes: 30
+    
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-      - uses: actions/upload-artifact@v4
-        with:
-          python-version: "3.10"
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Run Deal Finder
-        run: |
-          python find_deals.py
-
-      - name: Upload report
-        uses: actions/upload-artifact@v4
-        with:
-          name: shopping-report
-          path: output/
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Sync from Notion (if configured)
+      if: ${{ secrets.NOTION_TOKEN && secrets.NOTION_DATABASE_ID }}
+      env:
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      run: |
+        echo "Syncing shopping list from Notion..."
+        python automation/notion_sync.py --sync || echo "Notion sync failed, using local list"
+    
+    - name: Run deal finder
+      id: find_deals
+      run: |
+        echo "Starting deal search..."
+        python automation/find_deals.py
+        echo "deals_found=true" >> $GITHUB_OUTPUT
+      env:
+        PYTHONPATH: ${{ github.workspace }}
+        DEBUG_MODE: ${{ github.event.inputs.debug_mode }}
+    
+    - name: Generate route optimization
+      if: steps.find_deals.outputs.deals_found == 'true'
+      run: |
+        echo "Optimizing shopping route..."
+        python automation/route_planner.py
+    
+    - name: Upload shopping report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: shopping-report-${{ github.run_number }}
+        path: |
+          output/shopping_report_*.md
+          output/route_report_*.md
+        retention-days: 30
+    
+    - name: Create issue with deals (if great savings found)
+      if: steps.find_deals.outputs.deals_found == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const reports = fs.readdirSync('output').filter(f => f.includes('shopping_report'));
+          if (reports.length > 0) {
+            const report = fs.readFileSync(`output/${reports[0]}`, 'utf8');
+            
+            // Extract savings amount from report
+            const savingsMatch = report.match(/Total potential savings: \$(\d+\.\d+)/);
+            const savings = savingsMatch ? parseFloat(savingsMatch[1]) : 0;
+            
+            // Only create issue if savings > $20
+            if (savings > 20) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `💰 Deal Alert: Save $${savings.toFixed(2)} today!`,
+                body: report.substring(0, 3000) + '\n\n[View full report in Actions](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})',
+                labels: ['deals', 'shopping']
+              });
+            }
+          }
+    
+    - name: Send email notification
+      if: ${{ steps.find_deals.outputs.deals_found == 'true' && secrets.EMAIL_ADDRESS && secrets.SENDGRID_API_KEY }}
+      run: |
+        python automation/send_notifications.py
+      env:
+        EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+        SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+    
+    - name: Update Google Sheets
+      if: ${{ steps.find_deals.outputs.deals_found == 'true' && secrets.GOOGLE_SHEETS_ID }}
+      continue-on-error: true
+      run: |
+        python automation/sheets_integration.py
+      env:
+        GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+        GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+    
+    - name: Sync back to Notion
+      if: ${{ steps.find_deals.outputs.deals_found == 'true' && secrets.NOTION_TOKEN }}
+      continue-on-error: true
+      env:
+        NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+      run: |
+        python automation/notion_sync.py --update-deals
+    
+    - name: Commit updated data
+      if: always()
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add -A output/ data/
+        git diff --staged --quiet || git commit -m "🛒 Update shopping data - $(date +'%Y-%m-%d')"
+    
+    - name: Push changes
+      if: always()
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+    
+    - name: Generate summary
+      if: always()
+      run: |
+        echo "## 🛒 Shopping Automation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f "output/shopping_report_*.md" ]; then
+          echo "✅ Deals found and analyzed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Extract key metrics
+          for file in output/shopping_report_*.md; do
+            if [ -f "$file" ]; then
+              grep -A 5 "Summary" "$file" >> $GITHUB_STEP_SUMMARY || true
+            fi
+          done
+        else
+          echo "ℹ️ No new deals found today" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📅 Next run: Tomorrow at 6 AM CST" >> $GITHUB_STEP_SUMMARY

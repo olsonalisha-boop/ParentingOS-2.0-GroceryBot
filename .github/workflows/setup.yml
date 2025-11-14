@@ -1,0 +1,252 @@
+name: Initial Setup
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: 'Email for notifications (optional)'
+        required: false
+      zip_code:
+        description: 'Your ZIP code for local stores'
+        required: false
+        default: '53211'
+      max_stores:
+        description: 'Max stores to visit per trip'
+        required: false
+        default: '3'
+      weekly_budget:
+        description: 'Weekly grocery budget'
+        required: false
+        default: '200'
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Create directory structure
+      run: |
+        mkdir -p data
+        mkdir -p output
+        mkdir -p scrapers
+        mkdir -p automation
+        mkdir -p .github/workflows
+        echo "✅ Directory structure created"
+    
+    - name: Initialize configuration
+      run: |
+        python - <<'EOF'
+        import json
+        import os
+        
+        # Create user configuration
+        config = {
+            "user_settings": {
+                "email": "${{ github.event.inputs.email }}",
+                "zip_code": "${{ github.event.inputs.zip_code }}",
+                "max_stores_per_trip": int("${{ github.event.inputs.max_stores }}" or 3),
+                "weekly_budget": float("${{ github.event.inputs.weekly_budget }}" or 200),
+                "preferred_shopping_days": ["Saturday", "Sunday"],
+                "notification_preferences": {
+                    "email": bool("${{ github.event.inputs.email }}"),
+                    "github_issues": True,
+                    "minimum_savings_for_alert": 20
+                }
+            },
+            "automation_settings": {
+                "deal_check_time": "06:00",
+                "timezone": "America/Chicago",
+                "enabled": True
+            }
+        }
+        
+        with open('data/user_config.json', 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        print("✅ User configuration created")
+        print(json.dumps(config, indent=2))
+        EOF
+    
+    - name: Create sample shopping list
+      run: |
+        cat > data/shopping_list.csv << 'EOL'
+        item_name,quantity,preferred_brand,max_price
+        Milk,1,Kemps,4.99
+        Bread,1,Brownberry,3.99
+        Eggs,1,,3.99
+        Chicken Breast,2,,8.99
+        Ground Beef,2,,7.99
+        Bananas,1,,2.99
+        Apples,1,,4.99
+        Cheese,1,Sargento,5.99
+        Yogurt,4,Chobani,1.29
+        Pasta,2,Barilla,2.99
+        Pasta Sauce,1,Rao's,7.99
+        Coffee,1,Starbucks,12.99
+        Cereal,1,Kellogg's,4.99
+        Orange Juice,1,Simply,5.99
+        Butter,1,Land O'Lakes,5.99
+        EOL
+        echo "✅ Sample shopping list created"
+    
+    - name: Test Python environment
+      run: |
+        python -c "
+        import sys
+        print(f'Python version: {sys.version}')
+        
+        # Test imports
+        try:
+            import requests
+            print('✅ requests installed')
+        except:
+            print('❌ requests not installed')
+        
+        try:
+            import pandas
+            print('✅ pandas installed')
+        except:
+            print('❌ pandas not installed')
+        
+        try:
+            import json
+            print('✅ json available')
+        except:
+            print('❌ json not available')
+        "
+    
+    - name: Validate workflows
+      run: |
+        echo "Checking workflow files..."
+        for workflow in .github/workflows/*.yml; do
+          if [ -f "$workflow" ]; then
+            echo "✅ Found: $workflow"
+          fi
+        done
+    
+    - name: Create README with status
+      run: |
+        cat > SETUP_STATUS.md << 'EOL'
+        # ✅ Setup Complete!
+        
+        ## Configuration Summary
+        - **ZIP Code**: ${{ github.event.inputs.zip_code }}
+        - **Max Stores**: ${{ github.event.inputs.max_stores }}
+        - **Weekly Budget**: $${{ github.event.inputs.weekly_budget }}
+        - **Email Notifications**: ${{ github.event.inputs.email && 'Enabled' || 'Disabled' }}
+        
+        ## Next Steps
+        
+        1. **Run Your First Deal Search**
+           - Go to Actions tab
+           - Click "Daily Deal Finder"
+           - Click "Run workflow"
+        
+        2. **Customize Your Shopping List**
+           - Edit `data/shopping_list.csv`
+           - Add your regular items
+           - Set your target prices
+        
+        3. **Set Up Secrets (Optional)**
+           Go to Settings → Secrets → Actions and add:
+           - `EMAIL_ADDRESS`: Your email for notifications
+           - `SENDGRID_API_KEY`: For email delivery
+           - `NOTION_TOKEN`: For Notion integration
+           - `NOTION_DATABASE_ID`: Your Notion database
+        
+        ## Available Workflows
+        
+        - **Daily Deal Finder**: Runs every morning at 6 AM
+        - **Notion Sync**: Syncs with your Notion database
+        - **Weekly Analytics**: Generates savings reports
+        
+        ## Support
+        
+        If you have issues, create an Issue in this repository.
+        
+        ---
+        *Setup completed: ${{ github.event.time }}*
+        EOL
+        
+        echo "✅ Setup documentation created"
+    
+    - name: Commit initial setup
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add -A
+        git diff --staged --quiet || git commit -m "🎉 Initial setup complete"
+    
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: ${{ github.ref }}
+    
+    - name: Create setup summary
+      run: |
+        echo "# 🎉 Setup Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Your shopping automation is ready to use!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## ✅ What was configured:" >> $GITHUB_STEP_SUMMARY
+        echo "- Directory structure created" >> $GITHUB_STEP_SUMMARY
+        echo "- Sample shopping list added" >> $GITHUB_STEP_SUMMARY
+        echo "- User configuration saved" >> $GITHUB_STEP_SUMMARY
+        echo "- Workflows validated" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## 🚀 Next Steps:" >> $GITHUB_STEP_SUMMARY
+        echo "1. Go to the **Actions** tab" >> $GITHUB_STEP_SUMMARY
+        echo "2. Click **Daily Deal Finder**" >> $GITHUB_STEP_SUMMARY
+        echo "3. Click **Run workflow**" >> $GITHUB_STEP_SUMMARY
+        echo "4. Watch your savings grow! 💰" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Create welcome issue
+      uses: actions/github-script@v6
+      with:
+        script: |
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: '👋 Welcome to Your Shopping Automation!',
+            body: `## 🎉 Setup Complete!
+            
+Your shopping automation is now configured and ready to save you money!
+
+### ✅ What's Working:
+- [x] Repository structure created
+- [x] Sample shopping list added
+- [x] Automation workflows configured
+- [x] User settings initialized
+
+### 📝 Your Settings:
+- **ZIP Code**: ${{ github.event.inputs.zip_code || '53211' }}
+- **Max Stores per Trip**: ${{ github.event.inputs.max_stores || '3' }}
+- **Weekly Budget**: \$$${{ github.event.inputs.weekly_budget || '200' }}
+
+### 🚀 Quick Start:
+1. **Edit your shopping list**: Go to \`data/shopping_list.csv\`
+2. **Run deal finder**: Actions → Daily Deal Finder → Run workflow
+3. **Check results**: Look for artifacts in the workflow run
+
+### 🔧 Optional Enhancements:
+- [ ] Add email notifications (set EMAIL_ADDRESS secret)
+- [ ] Connect Notion (set NOTION_TOKEN and NOTION_DATABASE_ID)
+- [ ] Enable SMS alerts (set Twilio credentials)
+
+### 📚 Resources:
+- [Documentation](README.md)
+- [Troubleshooting](QUICKSTART.md)
+- [Support](https://github.com/${context.repo.owner}/${context.repo.repo}/issues)
+
+Good luck saving money! 💰`,
+            labels: ['setup', 'documentation']
+          });
