@@ -105,7 +105,7 @@ jobs:
     - name: Send email notification
       if: ${{ steps.find_deals.outputs.deals_found == 'true' && secrets.EMAIL_ADDRESS && secrets.SENDGRID_API_KEY }}
       run: |
-        python automation/send_notifications.py
+        python automations/send_notifications.py
       env:
         EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
         SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
