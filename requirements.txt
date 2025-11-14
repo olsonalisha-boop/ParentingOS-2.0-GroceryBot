@@ -19,6 +19,7 @@ jsonschema==4.20.0
 # API integrations
 openai==1.6.1
 googlemaps==4.10.0
+notion-client==2.2.1
 
 # Scheduling and notifications
 schedule==1.2.0
