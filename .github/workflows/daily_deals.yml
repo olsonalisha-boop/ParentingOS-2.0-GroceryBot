@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/upload-artifact@v4
         with:
           python-version: "3.10"
 
@@ -28,7 +28,7 @@ jobs:
           python find_deals.py
 
       - name: Upload report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: shopping-report
           path: output/
